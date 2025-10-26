@@ -1,0 +1,2 @@
+source D:/Project/ble_auracast/test/NimBLE_Conn_Disconn/build/bootloader/gdbinit/symbols
+source D:/Project/ble_auracast/test/NimBLE_Conn_Disconn/build/bootloader/gdbinit/connect

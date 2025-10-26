@@ -1,0 +1,2 @@
+source D:/Project/ble_auracast/test/NimBLE_Conn_Disconn/build/gdbinit/symbols
+source D:/Project/ble_auracast/test/NimBLE_Conn_Disconn/build/gdbinit/connect

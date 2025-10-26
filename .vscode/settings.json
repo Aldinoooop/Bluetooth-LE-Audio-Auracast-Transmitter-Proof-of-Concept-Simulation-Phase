@@ -1,0 +1,7 @@
+{
+    "idf.monitorPort": "COM8",
+    "idf.espIdfPathWin": "c:\\Dev\\esp\\v5.5.1\\esp-idf",
+    "idf.toolsPathWin": "c:\\Dev\\.espressif",
+    "idf.pythonInstallPath": "c:\\Dev\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+    "idf.portWin": "COM8"
+}
