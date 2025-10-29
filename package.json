@@ -1,0 +1,32 @@
+{
+  "name": "ble_auracast",
+  "version": "1.0.0",
+  "description": "**Phase:** Proof of Concept (Simulation)",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/web_side/read_serial.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Aldinoooop/Bluetooth-LE-Audio-Auracast-Transmitter-Proof-of-Concept-Simulation-Phase.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Aldinoooop/Bluetooth-LE-Audio-Auracast-Transmitter-Proof-of-Concept-Simulation-Phase/issues"
+  },
+  "homepage": "https://github.com/Aldinoooop/Bluetooth-LE-Audio-Auracast-Transmitter-Proof-of-Concept-Simulation-Phase#readme",
+  "dependencies": {
+    "express": "^5.1.0",
+    "fs": "^0.0.1-security",
+    "http": "^0.0.1-security",
+    "serialport": "^13.0.0",
+    "ws": "^8.18.3"
+  }
+}

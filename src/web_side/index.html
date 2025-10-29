@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BLE Clients</title>
+<style>
+  .card { border:1px solid #ccc; padding:10px; margin:5px; border-radius:5px; }
+  button { margin-top:5px; }
+</style>
+</head>
+<body>
+<h2>Connected BLE Devices</h2>
+<div id="devices"></div>
+
+<script>
+const ws = new WebSocket(`http://localhost:3000`);
+
+ws.onmessage = (event) => {
+  let clients;
+  try {
+    clients = JSON.parse(event.data);
+  } catch(e) {
+    console.error("Failed to parse JSON", e);
+    return;
+  }
+
+  const container = document.getElementById("devices");
+  container.innerHTML = "";
+
+  clients.forEach(client => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <p>MAC: ${client.mac}</p>
+      <p>Interval: ${client.connInterval}</p>
+      <p>Latency: ${client.latency}</p>
+      <p>Timeout: ${client.timeout}</p>
+      <button onclick='deleteClient("${client.connectedID}")'>Delete</button>
+    `;
+    container.appendChild(card);
+  });
+};
+
+function deleteClient(id) {
+  ws.send(JSON.stringify({ action: "delete", id }));
+}
+</script>
+</body>
+</html>
