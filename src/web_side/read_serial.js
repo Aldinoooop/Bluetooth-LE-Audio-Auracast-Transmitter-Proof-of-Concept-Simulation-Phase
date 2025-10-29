@@ -4,7 +4,7 @@ import { SerialPort } from "serialport";
 import { ReadlineParser } from "@serialport/parser-readline";
 
 const app = express();
-const portHTTP = 3000;
+const portHTTP = 8080;
 
 // === SERVE FRONTEND ===
 app.use(express.static("public"));
@@ -38,10 +38,25 @@ wss.on("connection", (ws) => {
   ws.on("message", (msg) => {
     const command = JSON.parse(msg);
     console.log("📤 Dari Browser:", command);
+    // console.log(command.type);
 
-    if (command.action === "disconnect") {
-      // kirim ke ESP32 lewat serial
-      serial.write(`DISCONNECT:${command.connId}\n`);
+
+    if (command.type === "DISCONNECT") {
+      const data = `DISCONNECT:${command.connID}\n`;
+      console.log("DISCONNECTING...", data);
+
+      // Kirim tiap karakter satu per satu
+      for (let i = 0; i < data.length; i++) {
+        const char = data[i];
+        serial.write(Buffer.from(char, 'ascii'), (err) => {
+          if (err) {
+            console.error(`Error writing char '${char}':`, err.message);
+          } else {
+            // console.log(`Char '${char}' sent`);
+          }
+        });
+      }
     }
+
   });
 });

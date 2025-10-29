@@ -40,3 +40,9 @@ This project focuses on the development of a **Bluetooth Low Energy (LE) Audio T
 ---
 
 ## Project Structure
+/project
+├─ /src # Source code for simulation
+├─ /docs # Documentation and diagrams
+├─ /test # Program for function Test
+├─ README.md
+└─ LICENSE

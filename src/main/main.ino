@@ -2,8 +2,10 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
-#include <vector>
 #include <ArduinoJson.h>
+#include <map>
+
+std::map<int, int> connIdToIndex;  // mapping connId → index di array Devices
 
 BLEServer *pServer = NULL;
 BLECharacteristic *pCharacteristic = NULL;
@@ -11,59 +13,68 @@ int connectedClients = 0;
 bool deviceConnected = false;
 uint32_t value = 0;
 unsigned int lastTime = 0;
-String json;
 
-struct ClientInfo {
-  String mac;
-  int connectedID;
-  String peerID;
-  uint16_t connInterval;
-  uint16_t latency;
-  uint16_t timeout;
-};
-
-JsonDocument doc;
-
-std::vector<ClientInfo> clients;
+StaticJsonDocument<512> doc;                           // dokumen utama
+JsonArray devices = doc.createNestedArray("Devices");  // array untuk semua device
 
 #define SERVICE_UUID "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
 #define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer, ble_gap_conn_desc *desc) override {
-    ClientInfo ci;
-    ci.mac = BLEAddress(desc->peer_ota_addr).toString().c_str();
-    ci.connectedID = pServer->getConnId();
-    ci.peerID = BLEAddress(desc->peer_id_addr).toString().c_str();
-    ci.connInterval = desc->conn_itvl;
-    ci.latency = desc->conn_latency;
-    ci.timeout = desc->supervision_timeout;
+    connectedClients++;
 
-    doc["mac"] = BLEAddress(desc->peer_ota_addr).toString().c_str();
-    doc["connectedID"] = pServer->getConnId();
-    doc["peerID"] = BLEAddress(desc->peer_id_addr).toString().c_str();
-    doc["connInterval"] = desc->conn_itvl;
-    doc["latency"] = desc->conn_latency;
-    doc["timeout"] = desc->supervision_timeout;
+    // Buat object untuk device baru
+    JsonObject device = devices.createNestedObject();
+    device["mac"] = BLEAddress(desc->peer_ota_addr).toString().c_str();
+    device["connectedID"] = pServer->getConnId();
+    device["connInterval"] = desc->conn_itvl;
+    device["latency"] = desc->conn_latency;
+    device["timeout"] = desc->supervision_timeout;
 
-    
+    // Simpan mapping connId → index device
+    connIdToIndex[pServer->getConnId()] = devices.size() - 1;
+
+    // Update status umum
+    doc["Status"] = "NEW_CONNECT";
+    doc["connectedClients"] = connectedClients;
+
     serializeJson(doc, Serial);
     Serial.println();
-
-    clients.push_back(ci);
-    connectedClients++;
-    BLEDevice::startAdvertising();
   }
 
   void onDisconnect(BLEServer *pServer) override {
-    Serial.println("=== Device Disconnected ===");
-    if (!clients.empty()) clients.pop_back();
     connectedClients--;
+    doc["Status"] = "DEVICE_DISCONNECTED";
+    doc["connectedClients"] = connectedClients;
+
+    int connId = pServer->getConnId();
+    if (connIdToIndex.count(connId)) {
+      int index = connIdToIndex[connId];
+      // Hapus device dari array (buat ulang array)
+      JsonArray newDevices = doc.createNestedArray("Devices");
+      for (int i = 0; i < devices.size(); i++) {
+        if (i == index) continue;  // skip device yang disconnect
+        JsonObject oldDevice = devices[i];
+        JsonObject newDevice = newDevices.createNestedObject();
+        newDevice["mac"] = oldDevice["mac"];
+        newDevice["connectedID"] = oldDevice["connectedID"];
+        newDevice["connInterval"] = oldDevice["connInterval"];
+        newDevice["latency"] = oldDevice["latency"];
+        newDevice["timeout"] = oldDevice["timeout"];
+      }
+      devices = newDevices;         // update devices
+      connIdToIndex.erase(connId);  // hapus mapping
+    }
+
+    serializeJson(doc, Serial);
+    Serial.println();
   }
 };
 
 void setup() {
   Serial.begin(115200);
+  pinMode(LED_BUILTIN, OUTPUT);
 
   BLEDevice::init("ESP32");
 
@@ -85,34 +96,39 @@ void setup() {
   pAdvertising->setMinPreferred(0x0);
   BLEDevice::startAdvertising();
 
-  Serial.println("Waiting for client connections to notify...");
-  Serial.println("Type 'disconnect <connId>' to disconnect a client.");
+  // Serial.println("Waiting for client connections to notify...");
+  // Serial.println("Type 'disconnect <connId>' to disconnect a client.");
 }
 
 void loop() {
-  
+
   if (connectedClients > 0) {
     pCharacteristic->setValue((uint8_t *)&value, 4);
     pCharacteristic->notify();
     value++;
     delay(100);
+    
+
   }
 
   if (Serial.available()) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
-    if (cmd.startsWith("disconnect ")) {
-      int id = cmd.substring(11).toInt();
-      Serial.print("Trying to disconnect connId: ");
-      Serial.println(id);
-      pServer->disconnect(id);
+    digitalWrite(LED_BUILTIN, HIGH); 
+    if (cmd.startsWith("DISCONNECT:")) {
+      
+      int connId = cmd.substring(11).toInt();
+      // Serial.println("Arduino will disconnect connID: " + String(connId));
+      // panggil fungsi BLE untuk disconnect
+      pServer->disconnect(connId);  // sesuai API ESP32 BLE
     }
   }
+  digitalWrite(LED_BUILTIN, LOW); 
 
   if (connectedClients == 0 && deviceConnected) {
     delay(500);
     pServer->startAdvertising();
-    Serial.println("No clients connected, restarting advertising");
+    // Serial.println("No clients connected, restarting advertising");
     deviceConnected = false;
   }
 

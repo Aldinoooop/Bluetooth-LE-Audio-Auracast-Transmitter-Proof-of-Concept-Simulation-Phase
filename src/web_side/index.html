@@ -1,49 +1,213 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<title>BLE Clients</title>
-<style>
-  .card { border:1px solid #ccc; padding:10px; margin:5px; border-radius:5px; }
-  button { margin-top:5px; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BLE Device Monitor + Serial</title>
+  <style>
+    body {
+      font-family: Arial;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    #controls {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    #deviceContainer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      justify-content: center;
+    }
+
+    .deviceCard {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      padding: 15px;
+      width: 250px;
+      position: relative;
+    }
+
+    .deviceCard h3 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+
+    .deviceCard button {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: red;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .deviceData p {
+      margin: 5px 0;
+    }
+
+    button {
+      padding: 10px 15px;
+      margin: 5px;
+      cursor: pointer;
+    }
+  </style>
 </head>
+
 <body>
-<h2>Connected BLE Devices</h2>
-<div id="devices"></div>
+  <h1>BLE Device Monitor</h1>
 
-<script>
-const ws = new WebSocket(`http://localhost:3000`);
+  <div id="controls">
+    <button id="selectPortBtn">Select Arduino Port</button>
+    <button id="openPortBtn" disabled>Open Port</button>
+    <button id="micBtn">🎤 Start Mic</button>
+  </div>
 
-ws.onmessage = (event) => {
-  let clients;
-  try {
-    clients = JSON.parse(event.data);
-  } catch(e) {
-    console.error("Failed to parse JSON", e);
-    return;
-  }
+  <div id="deviceContainer"></div>
 
-  const container = document.getElementById("devices");
-  container.innerHTML = "";
+  <script>
+    let port;
+    let reader;
+    let keepReading = false;
 
-  clients.forEach(client => {
-    const card = document.createElement("div");
-    card.className = "card";
-    card.innerHTML = `
-      <p>MAC: ${client.mac}</p>
-      <p>Interval: ${client.connInterval}</p>
-      <p>Latency: ${client.latency}</p>
-      <p>Timeout: ${client.timeout}</p>
-      <button onclick='deleteClient("${client.connectedID}")'>Delete</button>
-    `;
-    container.appendChild(card);
-  });
-};
+    const deviceContainer = document.getElementById('deviceContainer');
+    const selectPortBtn = document.getElementById('selectPortBtn');
+    const openPortBtn = document.getElementById('openPortBtn');
+    const micBtn = document.getElementById('micBtn');
 
-function deleteClient(id) {
-  ws.send(JSON.stringify({ action: "delete", id }));
-}
-</script>
+    const ws = new WebSocket("ws://localhost:8080");
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.Status === 'NEW_CONNECT') {
+        data.Devices.forEach(d => addDevice(d));
+      }
+      if (data.Status === 'DEVICE_DISCONNECTED') {
+        data.Devices.forEach(d => removeDevice(d.connectedID));
+      }
+    };
+
+    // Pilih port Arduino
+    selectPortBtn.onclick = async () => {
+      try {
+        port = await navigator.serial.requestPort();
+        console.log('Port selected:', port);
+        openPortBtn.disabled = false;
+      } catch (err) {
+        console.error('Port selection cancelled', err);
+      }
+    };
+
+    // Buka port dan mulai membaca
+    openPortBtn.onclick = async () => {
+      if (!port) return;
+      await port.open({ baudRate: 115200 });
+      console.log('Port opened');
+
+      const textDecoder = new TextDecoderStream();
+      const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+      reader = textDecoder.readable.getReader();
+      keepReading = true;
+
+      readLoop();
+    };
+
+    async function readLoop() {
+      while (keepReading) {
+        try {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) parseSerialData(value.trim());
+        } catch (err) {
+          console.error('Error reading:', err);
+          break;
+        }
+      }
+    }
+
+    // Parse JSON dari Arduino
+    function parseSerialData(line) {
+      try {
+        const data = JSON.parse(line);
+        if (data.Status === 'NEW_CONNECT') {
+          data.Devices.forEach(d => addDevice(d));
+        }
+        if (data.Status === 'DEVICE_DISCONNECTED') {
+          // bisa hapus semua device yang disconnect
+          data.Devices.forEach(d => removeDevice(d.connectedID));
+        }
+      } catch (err) {
+        console.warn('Invalid JSON:', line);
+      }
+    }
+
+    // Tambah device card
+    function addDevice(device) {
+      if (document.getElementById(`device-${device.connectedID}`)) return;
+
+      const card = document.createElement('div');
+      card.className = 'deviceCard';
+      card.id = `device-${device.connectedID}`;
+
+      const title = document.createElement('h3');
+      title.textContent = `Device ${device.connectedID}`;
+      card.appendChild(title);
+
+      const btn = document.createElement('button');
+      btn.textContent = 'Disconnect';
+      btn.onclick = () => {
+        // kirim command ke Node.js via WebSocket
+        ws.send(JSON.stringify({
+          type: "DISCONNECT",
+          connID: device.connectedID
+        }));
+        console.log(`Request disconnect ${device.connectedID}`);
+        removeDevice(device.connectedID); // hapus card sementara
+      };
+      card.appendChild(btn);
+
+      const dataDiv = document.createElement('div');
+      dataDiv.className = 'deviceData';
+      dataDiv.innerHTML = `
+    <p><b>MAC:</b> ${device.mac}</p>
+    <p><b>ConnID:</b> ${device.connectedID}</p>
+    <p><b>Interval:</b> ${device.connInterval}</p>
+    <p><b>Latency:</b> ${device.latency}</p>
+    <p><b>Timeout:</b> ${device.timeout}</p>
+  `;
+      card.appendChild(dataDiv);
+
+      deviceContainer.appendChild(card);
+    }
+
+    function removeDevice(connID) {
+      const card = document.getElementById(`device-${connID}`);
+      if (card) card.remove();
+    }
+
+    // Mic input placeholder
+    let micStream;
+    micBtn.onclick = async () => {
+      if (!micStream) {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('Mic started', micStream);
+        micBtn.textContent = '🎤 Mic Active';
+      }
+    };
+  </script>
 </body>
+
 </html>
