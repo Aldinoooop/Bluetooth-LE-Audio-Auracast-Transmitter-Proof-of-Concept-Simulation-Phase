@@ -1,44 +1,25 @@
-import sounddevice as sd
+import serial
+import wave
 import numpy as np
 import time
-import struct
 
-FS = 16000
-FRAME_MS = 7.5
-SAMPLES_PER_FRAME = int(FS * FRAME_MS / 1000)
-sequence_number = 0
+# Serial ke ESP32
+ser = serial.Serial("COM8", 115200)
 
-def lc3_encode(pcm_frame):
-    return bytes((pcm_frame >> 8).astype(np.uint8))
+# Load WAV mono 16-bit
+wav_file = wave.open("audio.wav", "rb")
+frames_per_packet = 30
 
-def make_lc3_packet(sequence_number, lc3_payload):
-    timestamp = int(time.time() * 1000) & 0xFFFFFFFF
-    packet = struct.pack('<HI', sequence_number, timestamp) + lc3_payload
-    return packet
-
-# ------------------------
-# Stream input + output
-# ------------------------
-def audio_callback(indata, outdata, frames, time_info, status):
-    global sequence_number
-    pcm_frame = (indata[:,0] * 32767).astype(np.int16)
-
-    # Encode LC3 (simulasi)
-    lc3_frame = lc3_encode(pcm_frame)
-    pkt = make_lc3_packet(sequence_number, lc3_frame)
-    sequence_number = (sequence_number + 1) % 65536
-
-    # Kirim PCM asli ke outdata (realtime)
-    outdata[:,0] = pcm_frame / 32768.0  # normalisasi float -1..1
-
-    print(f"SN={sequence_number}, Paket size={len(pkt)} bytes")
-
-with sd.Stream(samplerate=FS, blocksize=SAMPLES_PER_FRAME,
-               dtype='float32',
-               channels=1, callback=audio_callback):
-    print("Recording from mic... Speak now! Press Ctrl+C to stop")
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Stopped")
+while True:
+    raw = wav_file.readframes(frames_per_packet)
+    if len(raw) == 0:
+        break
+    # Convert ke int16
+    pcm = np.frombuffer(raw, dtype=np.int16)
+    # Dummy LC3 encode: 60 byte
+    lc3_frame = bytearray(60)
+    for i in range(60):
+        lc3_frame[i] = pcm[i % len(pcm)] & 0xFF
+    # Kirim ke ESP32
+    ser.write(b'\x55' + lc3_frame)
+    time.sleep(0.01)  # 10ms per frame
