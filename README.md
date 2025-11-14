@@ -46,3 +46,18 @@ This project focuses on the development of a **Bluetooth Low Energy (LE) Audio T
 ├─ /test # Program for function Test
 ├─ README.md
 └─ LICENSE
+
+## How to simulate
+1. Open the src folder.
+2. The ESP32 program is located in src/main.
+3. The Node.js backend program is located in src/web_side/read_serial.js.
+4. The web interface is located in src/web_side/index.html.
+5. Connect the ESP32 to your computer using a Serial-to-USB cable.
+6. Open read_serial.js and adjust the ESP32 port based on the port shown in Device Manager.
+7. Open a terminal and navigate to:
+cd ../ble_auracast/src/web_side
+8. Once the ESP32 is connected, run:
+node read_serial.js
+9. Open index.html in your browser.
+10. Click the "Open Port" button.
+11. After the port is open, all logs and BLE connection information will appear when the ESP32 connects to a BLE client.

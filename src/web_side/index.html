@@ -6,6 +6,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BLE Device Monitor + Serial</title>
   <style>
+    #logPanel {
+      width: 300px;
+      height: 90vh;
+      overflow-y: auto;
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      position: fixed;
+      left: 20px;
+      top: 20px;
+    }
+
+    #logPanel h2 {
+      margin-top: 0;
+    }
+
+    #logContent p {
+      margin: 4px 0;
+      font-size: 14px;
+    }
+
     body {
       font-family: Arial;
       padding: 20px;
@@ -67,12 +89,21 @@
 </head>
 
 <body>
+  <div id="logPanel">
+    <h2>Connection Log</h2>
+    <div id="logContent"></div>
+  </div>
+
   <h1>BLE Device Monitor</h1>
 
   <div id="controls">
-    <button id="selectPortBtn">Select Arduino Port</button>
-    <button id="openPortBtn" disabled>Open Port</button>
-    <button id="micBtn">🎤 Start Mic</button>
+
+    <button id="openPortBtn">Open Port</button>
+    <button id="closePortBtn">Close Port</button>
+    <p id="serialStatus" style="text-align:center; font-weight:bold; color:gray;">
+      Serial Status: Not Connected
+    </p>
+
   </div>
 
   <div id="deviceContainer"></div>
@@ -88,42 +119,118 @@
     const micBtn = document.getElementById('micBtn');
 
     const ws = new WebSocket("ws://localhost:8080");
+    const statusLabel = document.getElementById("serialStatus");
+
+    document.getElementById("openPortBtn").onclick = () => {
+      ws.send(JSON.stringify({ type: "OPEN_SERIAL" }));
+
+      statusLabel.textContent = "Serial Status: Connecting...";
+      statusLabel.style.color = "orange";
+
+      console.log("Request open serial sent to Node.js");
+    };
+
+    document.getElementById("closePortBtn").onclick = () => {
+      ws.send(JSON.stringify({ type: "CLOSE_SERIAL" }));
+
+      console.log("Request close serial sent to Node.js");
+    };
+
+
+    function updateDeviceCards(devices) {
+      const deviceContainer = document.getElementById('deviceContainer');
+
+      if (!devices || devices.length === 0) {
+        deviceContainer.innerHTML = '';
+        return;
+      }
+
+      devices.forEach(d => {
+        if (document.getElementById(`device-${d.connectedID}`)) return; // sudah ada
+
+        const card = document.createElement('div');
+        card.className = 'deviceCard';
+        card.id = `device-${d.connectedID}`;
+
+        const title = document.createElement('h3');
+        title.textContent = `Device ${d.connectedID}`;
+        card.appendChild(title);
+
+        const btn = document.createElement('button');
+        btn.textContent = 'Disconnect';
+        btn.onclick = () => {
+          ws.send(JSON.stringify({ type: "DISCONNECT", connID: d.connectedID }));
+        };
+        card.appendChild(btn);
+
+        const dataDiv = document.createElement('div');
+        dataDiv.className = 'deviceData';
+        dataDiv.innerHTML = `
+      <p><b>MAC:</b> ${d.mac}</p>
+      <p><b>ConnID:</b> ${d.connectedID}</p>
+      <p><b>Interval:</b> ${d.connInterval}</p>
+      <p><b>Latency:</b> ${d.latency}</p>
+      <p><b>Timeout:</b> ${d.timeout}</p>
+    `;
+        card.appendChild(dataDiv);
+
+        deviceContainer.appendChild(card);
+      });
+    }
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
       if (data.Status === 'NEW_CONNECT') {
-        data.Devices.forEach(d => addDevice(d));
+        updateDeviceCards(data.Devices);
+        data.Devices.forEach(d => addLog(`Device ${d.connectedID} connected (MAC: ${d.mac})`));
+
       }
-      if (data.Status === 'DEVICE_DISCONNECTED') {
-        data.Devices.forEach(d => removeDevice(d.connectedID));
+
+      if (data.Status === 'DEVICE_DISCONNECTED' || data.Status === 'NO_CONNECTED') {
+        updateDeviceCards(data.Devices); 
+        data.Devices.forEach(d => addLog(`Device ${d.connectedID} disconnected`));
+
+      }
+
+      if (data.Status === "SERIAL_OPENING") {
+        statusLabel.textContent = "Serial Status: Connecting...";
+        statusLabel.style.color = "orange";
+      }
+
+      if (data.Status === "SERIAL_OPENED") {
+        statusLabel.textContent = "Serial Status: Connected";
+        statusLabel.style.color = "green";
+      }
+
+      if (data.Status === "SERIAL_ALREADY_OPEN") {
+        statusLabel.textContent = "Serial Status: Already Connected";
+        statusLabel.style.color = "blue";
+      }
+
+      if (data.Status === "SERIAL_ERROR") {
+        statusLabel.textContent = "Serial Error: " + data.message;
+        statusLabel.style.color = "red";
+      }
+
+      if (data.Status === "SERIAL_CLOSED") {
+        statusLabel.textContent = "Serial Status: Not COnneccted";
+        statusLabel.style.color = "gray";
+
       }
     };
 
-    // Pilih port Arduino
-    selectPortBtn.onclick = async () => {
-      try {
-        port = await navigator.serial.requestPort();
-        console.log('Port selected:', port);
-        openPortBtn.disabled = false;
-      } catch (err) {
-        console.error('Port selection cancelled', err);
-      }
-    };
+    function addLog(text) {
+      const logContent = document.getElementById("logContent");
+      const p = document.createElement("p");
+      const time = new Date().toLocaleTimeString();
 
-    // Buka port dan mulai membaca
-    openPortBtn.onclick = async () => {
-      if (!port) return;
-      await port.open({ baudRate: 115200 });
-      console.log('Port opened');
+      p.textContent = `[${time}] ${text}`;
+      logContent.appendChild(p);
 
-      const textDecoder = new TextDecoderStream();
-      const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
-      reader = textDecoder.readable.getReader();
-      keepReading = true;
+      logContent.scrollTop = logContent.scrollHeight;
+    }
 
-      readLoop();
-    };
 
     async function readLoop() {
       while (keepReading) {
@@ -138,23 +245,6 @@
       }
     }
 
-    // Parse JSON dari Arduino
-    function parseSerialData(line) {
-      try {
-        const data = JSON.parse(line);
-        if (data.Status === 'NEW_CONNECT') {
-          data.Devices.forEach(d => addDevice(d));
-        }
-        if (data.Status === 'DEVICE_DISCONNECTED') {
-          // bisa hapus semua device yang disconnect
-          data.Devices.forEach(d => removeDevice(d.connectedID));
-        }
-      } catch (err) {
-        console.warn('Invalid JSON:', line);
-      }
-    }
-
-    // Tambah device card
     function addDevice(device) {
       if (document.getElementById(`device-${device.connectedID}`)) return;
 
@@ -198,15 +288,6 @@
       if (card) card.remove();
     }
 
-    // Mic input placeholder
-    let micStream;
-    micBtn.onclick = async () => {
-      if (!micStream) {
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        console.log('Mic started', micStream);
-        micBtn.textContent = '🎤 Mic Active';
-      }
-    };
   </script>
 </body>
 
